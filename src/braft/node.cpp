@@ -454,11 +454,11 @@ int NodeImpl::init(const NodeOptions& options) {
     _options = options;
 
     // check _server_id
-    if (butil::IP_ANY == _server_id.addr.ip) {
-        LOG(ERROR) << "Group " << _group_id 
-                   << " Node can't started from IP_ANY";
-        return -1;
-    }
+    // if (butil::IP_ANY == _server_id.addr.ip) {
+    //     LOG(ERROR) << "Group " << _group_id
+    //                << " Node can't started from IP_ANY";
+    //     return -1;
+    // }
 
     if (!global_node_manager->server_exists(_server_id.addr)) {
         LOG(ERROR) << "Group " << _group_id

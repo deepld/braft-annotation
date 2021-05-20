@@ -9,6 +9,8 @@ execute_process(
     OUTPUT_VARIABLE OUTPUT_PATH
 )
 
+include_directories("/usr/local/opt/openssl/include/")
+link_directories("/usr/local/opt/openssl/lib/")
 set(CMAKE_PREFIX_PATH ${OUTPUT_PATH})
 
 include(FindThreads)
@@ -23,13 +25,16 @@ protobuf_generate_cpp(PROTO_SRC PROTO_HEADER counter.proto)
 # include PROTO_HEADER
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+#set(CMAKE_INCLUDE_PATH "output")
+#set(CMAKE_LIBRARY_PATH "lib_path")
+
 find_path(BRPC_INCLUDE_PATH NAMES brpc/server.h)
 if(EXAMPLE_LINK_SO)
     find_library(BRPC_LIB NAMES brpc)
-    find_library(BRAFT_LIB NAMES braft)
+#    find_library(BRAFT_LIB NAMES braft)
 else()
     find_library(BRPC_LIB NAMES libbrpc.a brpc)
-    find_library(BRAFT_LIB NAMES libbraft.a braft)
+#    find_library(BRAFT_LIB NAMES libbraft.a braft)
 endif()
 
 if((NOT BRPC_INCLUDE_PATH) OR (NOT BRPC_LIB))
@@ -37,11 +42,12 @@ if((NOT BRPC_INCLUDE_PATH) OR (NOT BRPC_LIB))
 endif()
 include_directories(${BRPC_INCLUDE_PATH})
 
-find_path(BRAFT_INCLUDE_PATH NAMES braft/raft.h)
-if ((NOT BRAFT_INCLUDE_PATH) OR (NOT BRAFT_LIB))
-    message (FATAL_ERROR "Fail to find braft")
-endif()
-include_directories(${BRAFT_INCLUDE_PATH})
+#find_path(BRAFT_INCLUDE_PATH NAMES braft/raft.h)
+#if ((NOT BRAFT_INCLUDE_PATH) OR (NOT BRAFT_LIB))
+#    message (FATAL_ERROR "Fail to find braft")
+#endif()
+#include_directories(${BRAFT_INCLUDE_PATH})
+include_directories("../../src/braft")
 
 find_path(GFLAGS_INCLUDE_PATH gflags/gflags.h)
 find_library(GFLAGS_LIBRARY NAMES gflags libgflags)
@@ -106,6 +112,7 @@ if ((NOT LEVELDB_INCLUDE_PATH) OR (NOT LEVELDB_LIB))
 endif()
 include_directories(${LEVELDB_INCLUDE_PATH})
 
+
 add_executable(counter_client client.cpp ${PROTO_SRC} ${PROTO_HEADER})
 add_executable(counter_server server.cpp ${PROTO_SRC} ${PROTO_HEADER})
 
@@ -115,9 +122,9 @@ set(DYNAMIC_LIB
     ${PROTOBUF_LIBRARY}
     ${GPERFTOOLS_LIBRARIES}
     ${LEVELDB_LIB}
-    ${BRAFT_LIB}
+    braft-static
     ${BRPC_LIB}
-    rt
+#    rt
     ssl
     crypto
     dl
@@ -125,10 +132,10 @@ set(DYNAMIC_LIB
     )
 
 target_link_libraries(counter_client
-                      "-Xlinker \"-(\""
-                      ${DYNAMIC_LIB}
-                      "-Xlinker \"-)\"")
+                    #   "-Xlinker \"-(\""
+                      ${DYNAMIC_LIB})
+                    #   "-Xlinker \"-)\"")
 target_link_libraries(counter_server
-                      "-Xlinker \"-(\""
-                      ${DYNAMIC_LIB}
-                      "-Xlinker \"-)\"")
+                    #   "-Xlinker \"-(\""
+                      ${DYNAMIC_LIB})
+                    #   "-Xlinker \"-)\"")

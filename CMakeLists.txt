@@ -9,6 +9,7 @@ INCLUDE(CPack)
 #option(EXAMPLE_LINK_SO "Whether examples are linked dynamically" OFF)
 option(BRPC_WITH_GLOG "With glog" OFF)
 option(WITH_DEBUG_SYMBOLS "With debug symbols" ON)
+option(BUILD_UNIT_TESTS "With test" OFF)
 
 set(WITH_GLOG_VAL "0")
 if(BRPC_WITH_GLOG)
@@ -247,3 +248,4 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/output/include/
         PATTERN "*.h"
         PATTERN "*.hpp"
         )
+add_subdirectory(example/counter)
