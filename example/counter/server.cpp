@@ -1,11 +1,11 @@
 // Copyright (c) 2018 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -24,21 +24,22 @@
 DEFINE_bool(check_term, true, "Check if the leader changed to another term");
 DEFINE_bool(disable_cli, false, "Don't allow raft_cli access this node");
 DEFINE_bool(log_applied_task, false, "Print notice log when a task is applied");
-DEFINE_int32(election_timeout_ms, 5000, 
+DEFINE_int32(election_timeout_ms, 5000,
             "Start election in such milliseconds if disconnect with the leader");
-DEFINE_int32(port, 8100, "Listen port of this peer");
-DEFINE_int32(snapshot_interval, 30, "Interval between each snapshot");
-DEFINE_string(conf, "", "Initial configuration of the replication group");
+DEFINE_int32(port, 10000, "Listen port of this peer");
+DEFINE_int32(snapshot_interval, 10, "Interval between each snapshot");
+DEFINE_string(conf, "127.0.0.1:10000:0", "Initial configuration of the replication group");
 DEFINE_string(data_path, "./data", "Path of data stored on");
 DEFINE_string(group, "Counter", "Id of the replication group");
 
 namespace example {
 class Counter;
 
+// server 回复最终请求的结果给 client；在调用 Run之前，response里边已经调好了相应的内容
 // Implements Closure which encloses RPC stuff
 class FetchAddClosure : public braft::Closure {
 public:
-    FetchAddClosure(Counter* counter, 
+    FetchAddClosure(Counter* counter,
                     const FetchAddRequest* request,
                     CounterResponse* response,
                     google::protobuf::Closure* done)
@@ -107,12 +108,17 @@ public:
         // peers in the group receive this request as well.
         // Notice that _value can't be modified in this routine otherwise it
         // will be inconsistent with others in this group.
-        
+
+        // 用这个来判断当前自己的状态，是否还是leader；
+        //    如果 leader 变更，自己注册的回调会修改这个值
         // Serialize request to IOBuf
         const int64_t term = _leader_term.load(butil::memory_order_relaxed);
         if (term < 0) {
+            // 通知client，转发给当前的leader
             return redirect(response);
         }
+
+        // 提取 request 内容到 IOBuf 中，存储到 task
         butil::IOBuf log;
         butil::IOBufAsZeroCopyOutputStream wrapper(&log);
         if (!request->SerializeToZeroCopyStream(&wrapper)) {
@@ -131,12 +137,14 @@ public:
             // ABA problem can be avoid if expected_term is set
             task.expected_term = term;
         }
+
+        // 这里是开始进入分发流程，不是 "Apply"
         // Now the task is applied to the group, waiting for the result.
         return _node->apply(task);
     }
 
     void get(CounterResponse* response) {
-        // In consideration of consistency. GetRequest to follower should be 
+        // In consideration of consistency. GetRequest to follower should be
         // rejected.
         if (!is_leader()) {
             // This node is a follower or it's not up-to-date. Redirect to
@@ -149,7 +157,7 @@ public:
         response->set_value(_value.load(butil::memory_order_relaxed));
     }
 
-    bool is_leader() const 
+    bool is_leader() const
     { return _leader_term.load(butil::memory_order_acquire) > 0; }
 
     // Shut this node down.
@@ -167,7 +175,7 @@ public:
     }
 
 private:
-friend class FetchAddClosure;
+  friend class FetchAddClosure;
 
     void redirect(CounterResponse* response) {
         response->set_success(false);
@@ -179,22 +187,29 @@ friend class FetchAddClosure;
         }
     }
 
+    // 对当前已经 commit 成功的哪些请求，开始进行本地 apply
     // @braft::StateMachine
     void on_apply(braft::Iterator& iter) {
-        // A batch of tasks are committed, which must be processed through 
+        // A batch of tasks are committed, which must be processed through
         // |iter|
         for (; iter.valid(); iter.next()) {
             int64_t detal_value = 0;
             CounterResponse* response = NULL;
+
+            // 确保最终会在一个异步线程中，执行 task.done，回复给 client
             // This guard helps invoke iter.done()->Run() asynchronously to
             // avoid that callback blocks the StateMachine.
             braft::AsyncClosureGuard closure_guard(iter.done());
+
+            // 存在回调，说明是自己设置的，自己是leader将请求发送出去了
             if (iter.done()) {
                 // This task is applied by this node, get value from this
                 // closure to avoid additional parsing.
                 FetchAddClosure* c = dynamic_cast<FetchAddClosure*>(iter.done());
                 response = c->response();
                 detal_value = c->request()->value();
+
+            // follower 需要自己重新从 reqeust中将数据解析出来
             } else {
                 // Have to parse FetchAddRequest from this log.
                 butil::IOBufAsZeroCopyInputStream wrapper(iter.data());
@@ -205,7 +220,7 @@ friend class FetchAddClosure;
 
             // Now the log has been parsed. Update this state machine by this
             // operation.
-            const int64_t prev = _value.fetch_add(detal_value, 
+            const int64_t prev = _value.fetch_add(detal_value,
                                                   butil::memory_order_relaxed);
             if (response) {
                 response->set_success(true);
@@ -215,7 +230,7 @@ friend class FetchAddClosure;
             // The purpose of following logs is to help you understand the way
             // this StateMachine works.
             // Remove these logs in performance-sensitive servers.
-            LOG_IF(INFO, FLAGS_log_applied_task) 
+            LOG_IF(INFO, FLAGS_log_applied_task)
                     << "Added value=" << prev << " by detal=" << detal_value
                     << " at log_index=" << iter.index();
         }
@@ -308,11 +323,13 @@ friend class FetchAddClosure;
     // end of @braft::StateMachine
 
 private:
+    // node 是与raft 通讯的接口
     braft::Node* volatile _node;
     butil::atomic<int64_t> _value;
     butil::atomic<int64_t> _leader_term;
 };
 
+// 请求完成后，执行回调处理
 void FetchAddClosure::Run() {
     // Auto delete this after Run()
     std::unique_ptr<FetchAddClosure> self_guard(this);
@@ -358,7 +375,7 @@ int main(int argc, char* argv[]) {
     example::CounterServiceImpl service(&counter);
 
     // Add your service into RPC server
-    if (server.AddService(&service, 
+    if (server.AddService(&service,
                           brpc::SERVER_DOESNT_OWN_SERVICE) != 0) {
         LOG(ERROR) << "Fail to add service";
         return -1;
