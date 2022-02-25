@@ -1,3 +1,5 @@
+# Nothing has been updated yet，ignore this repo
+
 [![Build Status](https://travis-ci.org/baidu/braft.svg?branch=master)](https://travis-ci.org/baidu/braft)
 
 ---
